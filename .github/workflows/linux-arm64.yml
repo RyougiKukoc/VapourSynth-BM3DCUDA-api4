@@ -1,15 +1,6 @@
 name: Build (Linux, ARM64)
 
 on:
-  push:
-    paths:
-      - 'CMakeLists.txt'
-      - 'source/*'
-      - 'cpu_source/*'
-      - 'hip_source/*'
-      - 'rtc_source/*'
-      - 'sycl_source/*'
-      - '.github/workflows/linux-arm64.yml'
   workflow_dispatch:
 
 jobs:

@@ -2,8 +2,13 @@
 
 Copyright© 2021 WolframRhodium
 
-BM3D denoising filter for VapourSynth API4. This fork publishes only the
-`bm3dcpu` and `bm3dcuda_rtc` plugins.
+BM3D denoising filter for VapourSynth API4. This fork publishes only Windows
+release-backed VCS packages for the `bm3dcpu` and `bm3dcuda_rtc` plugins.
+
+Current package version: `2.15`.
+
+This fork intentionally does not publish the standard `bm3dcuda`, HIP, or SYCL
+backends.
 
 ## Description
 
@@ -13,10 +18,24 @@ BM3D denoising filter for VapourSynth API4. This fork publishes only the
 
 - The `cpu` version is implemented in AVX and AVX2 intrinsics, serves as a reference implementation on CPU. However, _bitwise identical_ outputs are not guaranteed across CPU and CUDA implementations.
 
+## Published Variants
+
+The repository has three user-facing install tags:
+
+| Tag | Intended user | Installed plugins | Release assets used |
+| --- | --- | --- | --- |
+| `cpu` | Machines without an NVIDIA GPU, or users who only want the CPU backend. | `bm3dcpu.dll` | `cpu` release: `bm3dcuda-cpu-win64.zip` |
+| `cu121` | NVIDIA users whose driver supports CUDA 12.1. | `bm3dcpu.dll` and CUDA 12.1 static-NVRTC `bm3dcuda_rtc.dll` | `cpu` release plus `cu121` release: `bm3dcuda-cu121-win64.zip` |
+| `cu129` | NVIDIA users whose driver supports CUDA 12.9. | `bm3dcpu.dll` and CUDA 12.9 static-NVRTC `bm3dcuda_rtc.dll` | `cpu` release plus `cu129` release: `bm3dcuda-cu129-win64.zip` |
+
+The CUDA variants deliberately include the CPU backend as well, so scripts can
+use `core.bm3dcpu` and `core.bm3dcuda_rtc` from the same installation. Users
+without an NVIDIA GPU should install the `cpu` tag.
+
 ## Installation
 
-The Windows VCS install path is release-backed. Pick the package variant by
-installing from one of the repository tags:
+Install from an explicit tag. The default branch is not the user-facing
+installation target.
 
 ```powershell
 pip install "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4.git@cpu"
@@ -24,23 +43,39 @@ pip install "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSyn
 pip install "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4.git@cu129"
 ```
 
-`cpu` installs only `bm3dcpu.dll`. `cu121` installs `bm3dcpu.dll` from the
-`cpu` release plus a CUDA 12.1 static-NVRTC `bm3dcuda_rtc.dll`. `cu129`
-installs `bm3dcpu.dll` from the `cpu` release plus a CUDA 12.9 static-NVRTC
-`bm3dcuda_rtc.dll`. If you switch between tags, use `--force-reinstall` so pip
-replaces the already-installed wheel with the other variant.
+If you switch between variants, force a reinstall so pip replaces the existing
+wheel:
+
+```powershell
+pip install --force-reinstall "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4.git@cu121"
+```
+
+The build hook downloads the matching GitHub Release assets and places the
+plugin package under VapourSynth's autoload tree:
+
+```text
+vapoursynth/plugins/bm3dcuda/
+  manifest.vs
+  bm3dcpu.dll
+  bm3dcuda_rtc.dll   # only for cu121/cu129
+  LICENSE
+```
 
 ## Requirements
 
-- CPU with AVX support.
+- `cpu`: CPU with AVX2 support.
 
-- CUDA-enabled GPU(s) of [compute capability](https://developer.nvidia.com/cuda-gpus) 5.0 or higher (Maxwell+).
+- `cu121` / `cu129`: CPU with AVX2 support, plus an NVIDIA GPU of
+  [compute capability](https://developer.nvidia.com/cuda-gpus) 5.0 or higher
+  (Maxwell+).
 
-- GPU driver 450 or newer.
+- `cu121` / `cu129`: the installed NVIDIA driver must support the selected CUDA
+  runtime. Use `cu121` for machines pinned to older 12.x-capable drivers; use
+  `cu129` only when the driver supports CUDA 12.9.
 
 The minimum requirement on compute capability is 3.5, which requires manual compilation (specifying nvcc flag `-gencode arch=compute_35,code=sm_35`).
 
-The `cpu` version does not require any external libraries but requires AVX2 support on CPU in addition.
+The `cpu` version does not require NVIDIA drivers or CUDA runtime libraries.
 
 ## Parameters
 

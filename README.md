@@ -2,15 +2,33 @@
 
 Copyright© 2021 WolframRhodium
 
-BM3D denoising filter for VapourSynth, implemented in CUDA.
+BM3D denoising filter for VapourSynth API4. This fork publishes only the
+`bm3dcpu` and `bm3dcuda_rtc` plugins.
 
 ## Description
 
 - Please check [VapourSynth-BM3D](https://github.com/HomeOfVapourSynthEvolution/VapourSynth-BM3D).
 
-- The `_rtc` version compiles GPU code at runtime, which might runs faster than standard version at the cost of a slight overhead.
+- The `_rtc` version compiles GPU code at runtime, which might run faster than the standard version in steady state at the cost of startup compilation overhead.
 
 - The `cpu` version is implemented in AVX and AVX2 intrinsics, serves as a reference implementation on CPU. However, _bitwise identical_ outputs are not guaranteed across CPU and CUDA implementations.
+
+## Installation
+
+The Windows VCS install path is release-backed. Pick the package variant by
+installing from one of the repository tags:
+
+```powershell
+pip install "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4.git@cpu"
+pip install "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4.git@cu121"
+pip install "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4.git@cu129"
+```
+
+`cpu` installs only `bm3dcpu.dll`. `cu121` installs `bm3dcpu.dll` from the
+`cpu` release plus a CUDA 12.1 static-NVRTC `bm3dcuda_rtc.dll`. `cu129`
+installs `bm3dcpu.dll` from the `cpu` release plus a CUDA 12.9 static-NVRTC
+`bm3dcuda_rtc.dll`. If you switch between tags, use `--force-reinstall` so pip
+replaces the already-installed wheel with the other variant.
 
 ## Requirements
 
@@ -27,7 +45,7 @@ The `cpu` version does not require any external libraries but requires AVX2 supp
 ## Parameters
 
 ```python3
-{bm3dcuda, bm3dcuda_rtc, bm3dcpu}.BM3D(clip clip[, clip ref=None, float[] sigma=3.0, int[] block_step=8, int[] bm_range=9, int radius=0, int[] ps_num=2, int[] ps_range=4, bint chroma=False, int device_id=0, bool fast=True, int extractor_exp=0])
+{bm3dcuda_rtc, bm3dcpu}.BM3D(clip clip[, clip ref=None, float[] sigma=3.0, int[] block_step=8, int[] bm_range=9, int radius=0, int[] ps_num=2, int[] ps_range=4, bint chroma=False, int device_id=0, bool fast=True, int extractor_exp=0])
 ```
 
 - clip:
@@ -41,14 +59,14 @@ The `cpu` version does not require any external libraries but requires AVX2 supp
     Used in block-matching and as the reference in empirical Wiener filtering, i.e. `bm3d.Final` / `bm3d.VFinal`:
 
     ```python3
-    basic = core.{bm3dcpu, bm3dcuda, bm3dcuda_rtc}.BM3D(src, radius=0)
+    basic = core.{bm3dcpu, bm3dcuda_rtc}.BM3D(src, radius=0)
     final = core.{bm3d...}.BM3D(src, ref=basic, radius=0)
 
     vbasic = core.{bm3d...}.BM3D(src, radius=radius_nonzero).bm3d.VAggregate(radius=radius_nonzero)
     vfinal = core.{bm3d...}.BM3D(src, ref=vbasic, radius=r).bm3d.VAggregate(radius=r)
     
     # alternatively, using the v2 interface
-    basic_or_vbasic = core.{bm3dcpu, bm3dcuda, bm3dcuda_rtc}.BM3Dv2(src, radius=r)
+    basic_or_vbasic = core.{bm3dcpu, bm3dcuda_rtc}.BM3Dv2(src, radius=r)
     final_or_vfinal = core.{bm3d...}.BM3Dv2(src, ref=basic_or_vbasic, radius=r)
     ```
 
@@ -151,10 +169,25 @@ GPU memory consumptions:
 `(ref ? 4 : 3) * (chroma ? 3 : 1) * (fast ? 4 : 1) * (2 * radius + 1) * size_of_a_single_frame`
 
 ## Compilation
+- Windows release builds use MSVC for both `bm3dcpu` and `bm3dcuda_rtc`.
+
 - The CMake configuration of `BM3DCUDA_RTC` links to NVRTC static library by default, which requires CUDA 11.5 or later.
 
 ```bash
-cmake -S . -B build -D CMAKE_BUILD_TYPE=Release -D CMAKE_CUDA_FLAGS="--threads 0 --use_fast_math -Wno-deprecated-gpu-targets" -D CMAKE_CUDA_ARCHITECTURES="50;61-real;75-real;86"
+cmake -S . -B build -G Ninja ^
+  -D CMAKE_BUILD_TYPE=Release ^
+  -D ENABLE_CPU=ON ^
+  -D ENABLE_CUDA=OFF ^
+  -D ENABLE_CUDA_RTC=ON ^
+  -D ENABLE_HIP=OFF ^
+  -D ENABLE_SYCL=OFF ^
+  -D USE_NVRTC_STATIC=ON ^
+  -D VAPOURSYNTH_INCLUDE_DIRECTORY=C:\path\to\vapoursynth\include
 
 cmake --build build --config Release
 ```
+
+For reproducible release packages, use the GitHub Actions workflow. It builds
+and smoke-tests one selected variant at a time, then uploads
+`bm3dcuda-cpu-win64.zip`, `bm3dcuda-cu121-win64.zip`, or
+`bm3dcuda-cu129-win64.zip` to the matching release tag.

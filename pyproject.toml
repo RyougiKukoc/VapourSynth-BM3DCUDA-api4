@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.30", "packaging>=24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vapoursynth-bm3dcuda"
+version = "2.6"
+description = "BM3D CPU and CUDA RTC plugins for VapourSynth"
+readme = "README.md"
+license = { file = "LICENSE" }
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "VapourSynth-BM3DCUDA contributors" }]
+dependencies = ["VapourSynth>=77"]
+
+[project.urls]
+"Source Code" = "https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4"
+"Releases" = "https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4/releases"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "CMakeLists.txt",
+  "LICENSE",
+  "README.md",
+  "cpu_source",
+  "hatch_build.py",
+  "pyproject.toml",
+  "rtc_source",
+  "source",
+  "tools",
+]
+
+[tool.hatch.build.targets.wheel]
+include = ["vapoursynth/plugins"]
+artifacts = [
+  "vapoursynth/plugins/**/*.dll",
+  "vapoursynth/plugins/**/manifest.vs",
+  "vapoursynth/plugins/**/LICENSE",
+]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"

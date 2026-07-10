@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(BM3DHIP VERSION 2.6 LANGUAGES CXX)
+project(BM3DHIP VERSION 2.15 LANGUAGES CXX)
 
 find_package(HIP REQUIRED CONFIG)
 

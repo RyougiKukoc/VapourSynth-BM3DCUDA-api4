@@ -293,6 +293,12 @@ jobs:
           $assets += Get-ChildItem "dist\wheels-$env:BM3DCUDA_VARIANT\*.whl" | Select-Object -ExpandProperty FullName
           & cmd.exe /d /c "gh release view $tag --repo $env:GITHUB_REPOSITORY >NUL 2>NUL"
           if ($LASTEXITCODE -eq 0) {
+            $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
+            foreach ($asset in $release.assets) {
+              if ($asset.name -eq $env:BM3DCUDA_ASSET -or $asset.name -like "vapoursynth_bm3dcuda-*.whl") {
+                gh release delete-asset $tag $asset.name --yes --repo $env:GITHUB_REPOSITORY
+              }
+            }
             gh release upload $tag $assets --clobber --repo $env:GITHUB_REPOSITORY
           } else {
             gh release create $tag $assets --title $tag --notes "Automated BM3DCUDA $env:BM3DCUDA_VARIANT Windows build." --repo $env:GITHUB_REPOSITORY

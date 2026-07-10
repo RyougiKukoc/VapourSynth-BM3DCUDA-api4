@@ -1357,7 +1357,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
     vspapi->configPlugin(
         PLUGIN_ID, "bm3dcuda_rtc",
         "BM3D algorithm implemented in CUDA (NVRTC)",
-        VS_MAKE_VERSION(2, 6), VAPOURSYNTH_API_VERSION, 0, plugin
+        VS_MAKE_VERSION(2, 15), VAPOURSYNTH_API_VERSION, 0, plugin
     );
 
     constexpr auto bm3d_args {

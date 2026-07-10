@@ -4,7 +4,7 @@ if (POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
 endif()
 
-project(VapourSynth-BM3DCUDA VERSION 2.6 LANGUAGES CXX)
+project(VapourSynth-BM3DCUDA VERSION 2.15 LANGUAGES CXX)
 
 set(VAPOURSYNTH_INCLUDE_DIRECTORY "" CACHE PATH "Path to VapourSynth headers")
 set(USE_NVRTC_STATIC ON CACHE BOOL "Whether to use NVRTC static library")

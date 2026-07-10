@@ -1683,7 +1683,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
     vspapi->configPlugin(
         PLUGIN_ID, "bm3dcpu",
         "BM3D algorithm implemented in AVX and AVX2 intrinsics",
-        VS_MAKE_VERSION(2, 6), VAPOURSYNTH_API_VERSION, 0, plugin);
+        VS_MAKE_VERSION(2, 15), VAPOURSYNTH_API_VERSION, 0, plugin);
 
     constexpr auto bm3d_args {
         "clip:vnode;"

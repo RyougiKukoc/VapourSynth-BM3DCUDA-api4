@@ -4,7 +4,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     cmake_policy(SET CMP0091 NEW)
 endif()
 
-project(BM3DCUDA_RTC VERSION 2.6 LANGUAGES CXX)
+project(BM3DCUDA_RTC VERSION 2.15 LANGUAGES CXX)
 
 if (CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(WARNING "NVRTC is not available for 32-bit system")

@@ -22,13 +22,44 @@ else()
 
     target_link_libraries(bm3dcuda_rtc PRIVATE CUDA::cuda_driver)
 
+    if (WIN32 AND MSVC)
+        target_link_libraries(bm3dcuda_rtc PRIVATE delayimp)
+        target_link_options(bm3dcuda_rtc PRIVATE "/DELAYLOAD:nvcuda.dll")
+    endif()
+
     if (USE_NVRTC_STATIC AND (CUDAToolkit_VERSION_MAJOR GREATER_EQUAL "12" OR (
         CUDAToolkit_VERSION_MAJOR EQUAL "11" AND
         CUDAToolkit_VERSION_MINOR GREATER_EQUAL "5")))
 
-        target_link_directories(bm3dcuda_rtc PRIVATE "${CUDAToolkit_LIBRARY_DIR}")
-        target_link_libraries(bm3dcuda_rtc PRIVATE
-            nvrtc_static nvrtc-builtins_static nvptxcompiler_static)
+        if(TARGET CUDA::nvrtc_static)
+            target_link_libraries(bm3dcuda_rtc PRIVATE CUDA::nvrtc_static)
+
+            foreach(optional_cuda_static_target IN ITEMS
+                CUDA::nvrtc_builtins_static
+                CUDA::nvptxcompiler_static
+                CUDA::nvJitLink_static
+                CUDA::nvfatbin_static
+            )
+                if(TARGET ${optional_cuda_static_target})
+                    target_link_libraries(bm3dcuda_rtc PRIVATE ${optional_cuda_static_target})
+                endif()
+            endforeach()
+        else()
+            target_link_directories(bm3dcuda_rtc PRIVATE "${CUDAToolkit_LIBRARY_DIR}")
+            target_link_libraries(bm3dcuda_rtc PRIVATE
+                nvrtc_static nvrtc-builtins_static nvptxcompiler_static)
+
+            foreach(optional_cuda_static_library IN ITEMS nvJitLink_static nvfatbin_static)
+                find_library(${optional_cuda_static_library}_LIBRARY
+                    NAMES ${optional_cuda_static_library}
+                    PATHS "${CUDAToolkit_LIBRARY_DIR}"
+                    NO_DEFAULT_PATH
+                )
+                if(${optional_cuda_static_library}_LIBRARY)
+                    target_link_libraries(bm3dcuda_rtc PRIVATE "${${optional_cuda_static_library}_LIBRARY}")
+                endif()
+            endforeach()
+        endif()
 
         if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
             set_property(TARGET bm3dcuda_rtc PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
@@ -36,6 +67,9 @@ else()
 
         if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
             target_link_libraries(bm3dcuda_rtc PRIVATE Ws2_32)
+            if(MSVC)
+                target_link_libraries(bm3dcuda_rtc PRIVATE ntdll)
+            endif()
         endif()
     else()
         if (USE_NVRTC_STATIC)

@@ -138,10 +138,14 @@ jobs:
           set "CUDA_ROOT=${{ steps.cuda.outputs.environment-path }}\Library"
           echo CUDA_ROOT=%CUDA_ROOT%
           dir "%CUDA_ROOT%\include\nvrtc.h"
-          dir "%CUDA_ROOT%\lib\cuda.lib"
-          dir "%CUDA_ROOT%\lib\nvrtc_static.lib"
-          dir "%CUDA_ROOT%\lib\nvrtc-builtins_static.lib"
-          dir "%CUDA_ROOT%\lib\nvptxcompiler_static.lib"
+          if exist "%CUDA_ROOT%\lib\cuda.lib" dir "%CUDA_ROOT%\lib\cuda.lib"
+          if exist "%CUDA_ROOT%\lib\x64\cuda.lib" dir "%CUDA_ROOT%\lib\x64\cuda.lib"
+          if exist "%CUDA_ROOT%\lib\nvrtc_static.lib" dir "%CUDA_ROOT%\lib\nvrtc_static.lib"
+          if exist "%CUDA_ROOT%\lib\x64\nvrtc_static.lib" dir "%CUDA_ROOT%\lib\x64\nvrtc_static.lib"
+          if exist "%CUDA_ROOT%\lib\nvrtc-builtins_static.lib" dir "%CUDA_ROOT%\lib\nvrtc-builtins_static.lib"
+          if exist "%CUDA_ROOT%\lib\x64\nvrtc-builtins_static.lib" dir "%CUDA_ROOT%\lib\x64\nvrtc-builtins_static.lib"
+          if exist "%CUDA_ROOT%\lib\nvptxcompiler_static.lib" dir "%CUDA_ROOT%\lib\nvptxcompiler_static.lib"
+          if exist "%CUDA_ROOT%\lib\x64\nvptxcompiler_static.lib" dir "%CUDA_ROOT%\lib\x64\nvptxcompiler_static.lib"
 
       - name: Prepare VapourSynth R77 wheel
         run: >-
@@ -181,6 +185,21 @@ jobs:
           --autoload
           --exercise-cpu-filter
 
+      - name: Smoke-load CUDA RTC explicit package
+        if: env.BM3DCUDA_VARIANT != 'cpu'
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\windows-%BM3DCUDA_VARIANT%
+
+      - name: Smoke-load CUDA RTC package through manifest autoload
+        if: env.BM3DCUDA_VARIANT != 'cpu'
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\windows-%BM3DCUDA_VARIANT%
+          --autoload
+
       - name: Pack release zip
         run: >-
           "%pythonLocation%\python.exe" tools\package_plugin_zip.py
@@ -219,6 +238,11 @@ jobs:
         run: >-
           "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --exercise-cpu-filter
 
+      - name: Smoke test installed CUDA wheel
+        if: env.BM3DCUDA_VARIANT != 'cpu'
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --expect-rtc --exercise-cpu-filter
+
       - name: Smoke test source install with prebuilt package
         if: env.BM3DCUDA_VARIANT == 'cpu'
         run: |
@@ -226,6 +250,15 @@ jobs:
           "%pythonLocation%\python.exe" -m pip uninstall -y vapoursynth-bm3dcuda
           "%pythonLocation%\python.exe" -m pip install --force-reinstall --no-deps --no-build-isolation -v .
           "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --exercise-cpu-filter
+
+      - name: Smoke test CUDA source install with prebuilt packages
+        if: env.BM3DCUDA_VARIANT != 'cpu'
+        run: |
+          set "BM3DCUDA_CPU_PREBUILT_URL=%GITHUB_WORKSPACE%\dist\cpu-release\bm3dcuda-cpu-win64.zip"
+          set "BM3DCUDA_CUDA_PREBUILT_URL=%GITHUB_WORKSPACE%\dist\%BM3DCUDA_ASSET%"
+          "%pythonLocation%\python.exe" -m pip uninstall -y vapoursynth-bm3dcuda
+          "%pythonLocation%\python.exe" -m pip install --force-reinstall --no-deps --no-build-isolation -v .
+          "%pythonLocation%\python.exe" tools\smoke_installed_wheel.py --expect-rtc --exercise-cpu-filter
 
       - name: Upload package directory
         uses: actions/upload-artifact@v4

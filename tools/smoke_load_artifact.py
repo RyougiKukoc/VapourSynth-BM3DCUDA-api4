@@ -9,6 +9,40 @@ from pathlib import Path
 
 
 PLUGIN_PACKAGE = "bm3dcuda"
+ACTIVE_POLICY = None
+
+
+class IsolatedEnvironmentPolicy:
+    def __init__(self, vs: object, flags: int) -> None:
+        self._vs = vs
+        self._flags = flags
+        self._api = None
+        self._environment = None
+
+    def on_policy_registered(self, api: object) -> None:
+        self._api = api
+        self._environment = api.create_environment(self._flags)
+
+    def on_policy_cleared(self) -> None:
+        self._api = None
+        self._environment = None
+
+    def get_current_environment(self) -> object:
+        return self._environment
+
+    def set_environment(self, environment: object) -> object:
+        previous = self._environment
+        if environment is not None:
+            self._environment = environment
+        return previous
+
+    def is_alive(self, environment: object) -> bool:
+        return environment is self._environment
+
+    def close(self) -> None:
+        if self._api is not None and self._environment is not None:
+            self._api.destroy_environment(self._environment)
+            self._environment = None
 
 
 def resolve_vapoursynth_paths(root: Path | None) -> tuple[list[Path], list[Path]]:
@@ -53,7 +87,19 @@ def has_filter(core: object, namespace: str, function: str) -> bool:
 
 
 def make_core(vs: object, *, autoload: bool) -> object:
+    global ACTIVE_POLICY
     flags = 0 if autoload else vs.DISABLE_AUTO_LOADING
+    if getattr(vs, "has_policy", lambda: False)():
+        raise RuntimeError("cannot create an isolated core after a VapourSynth environment policy is installed")
+
+    policy_type = getattr(vs, "EnvironmentPolicy", None)
+    register_policy = getattr(vs, "register_policy", None)
+    if policy_type is not None and register_policy is not None:
+        policy = IsolatedEnvironmentPolicy(vs, int(flags))
+        register_policy(policy)
+        ACTIVE_POLICY = policy
+        return vs.core
+
     create_environment = getattr(vs, "create_environment", None)
     if create_environment is not None:
         for factory in (
@@ -82,14 +128,14 @@ def make_core(vs: object, *, autoload: bool) -> object:
         for factory in (
             lambda: core_type(flags=flags),
             lambda: core_type(flags),
-            lambda: core_type(),
+            lambda: core_type() if autoload else (_ for _ in ()).throw(RuntimeError()),
         ):
             try:
                 return factory()
             except Exception:
                 continue
 
-    return vs.core
+    raise RuntimeError("VapourSynth binding does not provide an isolated core constructor")
 
 
 def exercise_cpu_filter(core: object, vs: object) -> None:
@@ -150,39 +196,44 @@ def main(argv: list[str]) -> int:
         return 1
 
     core = make_core(vs, autoload=args.autoload)
+    try:
+        has_cpu = (artifact / "bm3dcpu.dll").exists()
+        has_rtc = (artifact / "bm3dcuda_rtc.dll").exists()
+        if not args.autoload:
+            if has_cpu:
+                core.std.LoadPlugin(str(artifact / "bm3dcpu.dll"))
+            if has_rtc:
+                core.std.LoadPlugin(str(artifact / "bm3dcuda_rtc.dll"))
 
-    has_cpu = (artifact / "bm3dcpu.dll").exists()
-    has_rtc = (artifact / "bm3dcuda_rtc.dll").exists()
-    if not args.autoload:
+        missing = []
+        if has_cpu and not has_filter(core, "bm3dcpu", "BM3D"):
+            missing.append("bm3dcpu.BM3D")
+        if has_rtc and not has_filter(core, "bm3dcuda_rtc", "BM3D"):
+            missing.append("bm3dcuda_rtc.BM3D")
+        if missing:
+            print(f"missing plugin functions after loading artifact: {missing}", file=sys.stderr)
+            return 1
+
         if has_cpu:
-            core.std.LoadPlugin(str(artifact / "bm3dcpu.dll"))
+            print(core.bm3dcpu.BM3D)
         if has_rtc:
-            core.std.LoadPlugin(str(artifact / "bm3dcuda_rtc.dll"))
+            print(core.bm3dcuda_rtc.BM3D)
 
-    missing = []
-    if has_cpu and not has_filter(core, "bm3dcpu", "BM3D"):
-        missing.append("bm3dcpu.BM3D")
-    if has_rtc and not has_filter(core, "bm3dcuda_rtc", "BM3D"):
-        missing.append("bm3dcuda_rtc.BM3D")
-    if missing:
-        print(f"missing plugin functions after loading artifact: {missing}", file=sys.stderr)
-        return 1
-
-    if has_cpu:
-        print(core.bm3dcpu.BM3D)
-    if has_rtc:
-        print(core.bm3dcuda_rtc.BM3D)
-
-    if args.exercise_cpu_filter:
-        if not has_cpu:
-            print("cannot exercise CPU filter: artifact does not contain bm3dcpu.dll", file=sys.stderr)
-            return 1
-        try:
-            exercise_cpu_filter(core, vs)
-        except Exception as exc:
-            print(f"CPU filter exercise failed: {exc}", file=sys.stderr)
-            return 1
-    return 0
+        if args.exercise_cpu_filter:
+            if not has_cpu:
+                print("cannot exercise CPU filter: artifact does not contain bm3dcpu.dll", file=sys.stderr)
+                return 1
+            try:
+                exercise_cpu_filter(core, vs)
+            except Exception as exc:
+                print(f"CPU filter exercise failed: {exc}", file=sys.stderr)
+                return 1
+        return 0
+    finally:
+        global ACTIVE_POLICY
+        if ACTIVE_POLICY is not None:
+            ACTIVE_POLICY.close()
+            ACTIVE_POLICY = None
 
 
 if __name__ == "__main__":

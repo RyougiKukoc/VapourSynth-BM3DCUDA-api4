@@ -1692,8 +1692,8 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
         "block_step:int[]:opt;"
         "bm_range:int[]:opt;"
         "radius:int:opt;"
-        "ps_num:int:opt;"
-        "ps_range:int:opt;"
+        "ps_num:int[]:opt;"
+        "ps_range:int[]:opt;"
         "chroma:int:opt;"
         "zero_init:int:opt;"
     };

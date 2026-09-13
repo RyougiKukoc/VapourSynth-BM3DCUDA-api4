@@ -524,7 +524,12 @@ static const VSFrame *VS_CC BM3DGetFrame(
         d->resources.pop_back();
         d->resources_lock.unlock();
 
+        bool context_pushed = false;
         const auto set_error = [&](const std::string & error_message) {
+            if (context_pushed) {
+                cuCtxPopCurrent(nullptr);
+                context_pushed = false;
+            }
             d->resources_lock.lock();
             d->resources.push_back(std::move(resource));
             d->resources_lock.unlock();
@@ -541,6 +546,7 @@ static const VSFrame *VS_CC BM3DGetFrame(
         int d_stride = d_pitch / sizeof(float);
 
         checkError(cuCtxPushCurrent(d->context));
+        context_pushed = true;
 
         if (d->chroma) {
             int width = vsapi->getFrameWidth(src, 0);
@@ -645,6 +651,7 @@ static const VSFrame *VS_CC BM3DGetFrame(
         }
 
         checkError(cuCtxPopCurrent(nullptr));
+        context_pushed = false;
 
         d->resources_lock.lock();
         d->resources.push_back(std::move(resource));
@@ -693,7 +700,17 @@ static void VS_CC BM3DCreate(
 
     auto d { std::make_unique<BM3DData>() };
 
+    bool context_pushed = false;
+    bool primary_context_retained = false;
     const auto set_error = [&](const std::string & error_message) {
+        if (context_pushed) {
+            cuCtxPopCurrent(nullptr);
+            context_pushed = false;
+        }
+        if (primary_context_retained) {
+            cuDevicePrimaryCtxRelease(d->device);
+            primary_context_retained = false;
+        }
         vsapi->mapSetError(out, ("BM3D_RTC: " + error_message).c_str());
         vsapi->freeNode(d->node);
         vsapi->freeNode(d->ref_node);
@@ -931,7 +948,9 @@ static void VS_CC BM3DCreate(
         }
 
         checkError(cuDevicePrimaryCtxRetain(&d->context, d->device));
+        primary_context_retained = true;
         checkError(cuCtxPushCurrent(d->context));
+        context_pushed = true;
 
         d->resources.reserve(num_copy_engines);
 
@@ -1062,6 +1081,7 @@ static void VS_CC BM3DCreate(
         }
 
         checkError(cuCtxPopCurrent(nullptr));
+        context_pushed = false;
     }
 
     d->out_vi = d->vi;
@@ -1082,6 +1102,10 @@ static void VS_CC BM3DCreate(
     );
     if (!vsapi->mapGetError(out))
         d.release();
+    else if (primary_context_retained) {
+        cuDevicePrimaryCtxRelease(d->device);
+        primary_context_retained = false;
+    }
 }
 
 struct VAggregateData {

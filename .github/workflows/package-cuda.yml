@@ -1,0 +1,253 @@
+name: Package CUDA Releases
+
+on:
+  push:
+    branches: [main]
+    tags: [cu121, cu129]
+    paths:
+      - "CMakeLists.txt"
+      - "cpu_source/**"
+      - "rtc_source/**"
+      - "hatch_build.py"
+      - "pyproject.toml"
+      - "README.md"
+      - "tools/**"
+      - ".github/workflows/package-cuda.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "cpu_source/**"
+      - "rtc_source/**"
+      - "hatch_build.py"
+      - "pyproject.toml"
+      - "README.md"
+      - "tools/**"
+      - ".github/workflows/package-cuda.yml"
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "CUDA variant to package"
+        default: all
+        type: choice
+        options: [all, cu121, cu129]
+
+permissions:
+  contents: write
+
+jobs:
+  select:
+    runs-on: ubuntu-24.04
+    outputs:
+      variant: ${{ steps.select.outputs.variant }}
+    steps:
+      - id: select
+        shell: bash
+        run: |
+          variant="${{ inputs.variant }}"
+          if [[ -z "$variant" ]]; then
+            case "${GITHUB_REF_NAME}" in
+              cu121|cu129) variant="${GITHUB_REF_NAME}" ;;
+              *) variant="all" ;;
+            esac
+          fi
+          echo "variant=$variant" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cu121
+            cuda_version: 12.1.105
+            cudart_version: 12.1.105
+            nvrtc_version: 12.1.105
+            nvcc_version: 12.1.105
+            nvjitlink_version: 12.1.105
+            extra_cuda_packages: ""
+          - variant: cu129
+            cuda_version: 12.9.86
+            cudart_version: 12.9.79
+            nvrtc_version: 12.9.86
+            nvcc_version: 12.9.86
+            nvjitlink_version: 12.9.86
+            extra_cuda_packages: "libnvfatbin=12.9.82 libnvfatbin-dev=12.9.82 libnvfatbin-static=12.9.82"
+    if: needs.select.outputs.variant == 'all' || needs.select.outputs.variant == matrix.variant
+    name: Build Windows ${{ matrix.variant }} package
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: >-
+          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging cmake ninja
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - id: cuda
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: cuda-${{ matrix.variant }}
+          init-shell: none
+          cache-downloads: true
+          post-cleanup: environment
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            cuda-cudart-dev=${{ matrix.cudart_version }}
+            cuda-nvrtc=${{ matrix.nvrtc_version }}
+            cuda-nvrtc-dev=${{ matrix.nvrtc_version }}
+            cuda-nvrtc-static=${{ matrix.nvrtc_version }}
+            cuda-nvcc=${{ matrix.nvcc_version }}
+            libnvjitlink=${{ matrix.nvjitlink_version }}
+            libnvjitlink-dev=${{ matrix.nvjitlink_version }}
+            libnvjitlink-static=${{ matrix.nvjitlink_version }}
+            ${{ matrix.extra_cuda_packages }}
+
+      - name: Prepare VapourSynth R77 wheel
+        run: >-
+          "%pythonLocation%\python.exe" tools\ci_prepare_windows.py
+
+      - name: Build CUDA RTC package directory
+        run: >-
+          "%pythonLocation%\python.exe" tools\ci_build_windows.py
+          --clean
+          --variant ${{ matrix.variant }}
+          --dist-dir dist\windows-${{ matrix.variant }}
+          --cuda-root "${{ steps.cuda.outputs.environment-path }}\Library"
+
+      - name: Pack and inspect the Windows RTC payload
+        shell: powershell
+        run: |
+          $zip = "dist\release-assets-windows\bm3dcuda-${{ matrix.variant }}-win64.zip"
+          & "$env:pythonLocation\python.exe" tools\package_plugin_zip.py --variant ${{ matrix.variant }} --input-dir "dist\windows-${{ matrix.variant }}" --output $zip
+          $dll = "dist\windows-${{ matrix.variant }}\bm3dcuda\bm3dcuda_rtc.dll"
+          dumpbin /dependents $dll
+          & "$env:pythonLocation\python.exe" -c "import zipfile; z=zipfile.ZipFile(r'$zip'); names=set(z.namelist()); assert 'bm3dcuda/manifest.vs' in names and 'bm3dcuda/bm3dcuda_rtc.dll' in names; assert 'bm3dcuda/bm3dcpu.dll' not in names"
+
+      - name: Build the merged Windows wheel
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force dist\cpu-release | Out-Null
+          gh release download cpu --pattern bm3dcuda-cpu-win64.zip --dir dist\cpu-release --repo $env:GITHUB_REPOSITORY
+          $env:BM3DCUDA_VARIANT = '${{ matrix.variant }}'
+          $env:BM3DCUDA_CPU_PREBUILT_URL = Join-Path $PWD 'dist\cpu-release\bm3dcuda-cpu-win64.zip'
+          $env:BM3DCUDA_CUDA_PREBUILT_URL = Join-Path $PWD 'dist\release-assets-windows\bm3dcuda-${{ matrix.variant }}-win64.zip'
+          & "$env:pythonLocation\python.exe" -m build --wheel --no-isolation --outdir dist\release-assets-windows
+          $wheel = Get-ChildItem dist\release-assets-windows\*.whl | Select-Object -First 1 -ExpandProperty FullName
+          & "$env:pythonLocation\python.exe" -c "import zipfile; z=zipfile.ZipFile(r'$wheel'); names=set(z.namelist()); assert 'vapoursynth/plugins/bm3dcuda/bm3dcpu.dll' in names and 'vapoursynth/plugins/bm3dcuda/bm3dcuda_rtc.dll' in names"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bm3dcuda-release-assets-windows-${{ matrix.variant }}
+          path: dist/release-assets-windows
+          if-no-files-found: error
+
+  linux:
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cu121
+            image: nvidia/cuda:12.1.1-devel-ubi8
+          - variant: cu129
+            image: nvidia/cuda:12.9.1-devel-ubi8
+    if: needs.select.outputs.variant == 'all' || needs.select.outputs.variant == matrix.variant
+    name: Build Linux ${{ matrix.variant }} payload
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static-NVRTC Linux payload
+        shell: bash
+        run: |
+          set -euxo pipefail
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            "${{ matrix.image }}" bash -lc '
+              set -euxo pipefail
+              dnf install -y cmake python3-pip gcc-toolset-12-gcc-c++ zip unzip
+              curl -fsSL https://files.pythonhosted.org/packages/c2/82/a4f5e879ff0bb6722ecbecf01482b0783ed05d42aefa7717e6a6f4f77180/vapoursynth-79-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl -o /tmp/vs.whl
+              mkdir -p /tmp/vs
+              unzip -q /tmp/vs.whl -d /tmp/vs
+              source /opt/rh/gcc-toolset-12/enable
+              export CC=gcc CXX=g++
+              mkdir -p dist/release-assets-linux
+              python3 tools/build_linux_cuda_release.py \
+                --variant ${{ matrix.variant }} \
+                --vapoursynth-include /tmp/vs/vapoursynth/include \
+                --cuda-root /usr/local/cuda \
+                --build-dir build-linux-${{ matrix.variant }} \
+                --output dist/release-assets-linux/bm3dcuda-${{ matrix.variant }}-linux-x86_64.zip
+            '
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build and inspect the Linux wheel
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip build cmake hatchling packaging "VapourSynth==79"
+          export BM3DCUDA_VARIANT=${{ matrix.variant }}
+          export BM3DCUDA_PREBUILT_URL="$GITHUB_WORKSPACE/dist/release-assets-linux/bm3dcuda-${{ matrix.variant }}-linux-x86_64.zip"
+          export BM3DCUDA_PLATFORM_TAG=manylinux_2_27_x86_64
+          python -m build --wheel --no-isolation --outdir dist/release-assets-linux
+          wheel=$(find dist/release-assets-linux -name '*.whl' -print -quit)
+          test -n "$wheel"
+          unzip -p "$wheel" vapoursynth/plugins/bm3dcuda/bm3dcuda_rtc.so >/tmp/bm3dcuda_rtc.so
+          python -c "import re, subprocess; out=subprocess.check_output(['readelf', '--version-info', '/tmp/bm3dcuda_rtc.so'], text=True); versions=[tuple(map(int, x.split('.'))) for x in re.findall(r'GLIBC_(\\d+\\.\\d+)', out)]; assert versions and max(versions) <= (2, 27), versions"
+          unzip -l "$wheel" | grep -E 'bm3dcuda/(manifest.vs|bm3dcpu.so|bm3dcuda_rtc.so|LICENSE)'
+          ldd /tmp/bm3dcuda_rtc.so | tee /tmp/bm3dcuda_rtc.ldd
+          ! grep 'not found' /tmp/bm3dcuda_rtc.ldd | grep -v 'libcuda.so.1'
+
+      - name: Smoke source install payload selection without a GPU
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export BM3DCUDA_VARIANT=${{ matrix.variant }}
+          export BM3DCUDA_PREBUILT_URL="$GITHUB_WORKSPACE/dist/release-assets-linux/bm3dcuda-${{ matrix.variant }}-linux-x86_64.zip"
+          python -m pip install --force-reinstall --no-deps -v . 2>&1 | tee /tmp/${{ matrix.variant }}-pip.log
+          grep "using ${{ matrix.variant }} prebuilt release asset" /tmp/${{ matrix.variant }}-pip.log
+          python -c "import vapoursynth as vs; from pathlib import Path; root=Path(vs.__file__).resolve().parent/'plugins'/'bm3dcuda'; assert all((root/name).is_file() for name in ('manifest.vs', 'bm3dcpu.so', 'bm3dcuda_rtc.so'))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bm3dcuda-release-assets-linux-${{ matrix.variant }}
+          path: dist/release-assets-linux
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag' && (github.ref_name == 'cu121' || github.ref_name == 'cu129')
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bm3dcuda-release-assets-*-${{ github.ref_name }}
+          path: release-assets
+          merge-multiple: true
+
+      - name: Upload all platform assets for this CUDA ref
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* --title "$GITHUB_REF_NAME" --notes "Automated BM3DCUDA CUDA Release." --repo "$GITHUB_REPOSITORY"
+          fi

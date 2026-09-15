@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(BM3DCPU VERSION 2.15 LANGUAGES CXX)
+project(BM3DCPU VERSION 2.16 LANGUAGES CXX)
 
 add_library(bm3dcpu SHARED source.cpp)
 target_include_directories(bm3dcpu PRIVATE ${VAPOURSYNTH_INCLUDE_DIRECTORY})
 set_target_properties(bm3dcpu PROPERTIES 
     CXX_EXTENSIONS OFF
     CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD_REQUIRED ON
+    PREFIX "")
 
 if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$"))
 

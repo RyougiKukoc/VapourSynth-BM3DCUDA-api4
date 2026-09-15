@@ -1,0 +1,241 @@
+name: Package CPU Release
+
+on:
+  push:
+    branches: [main]
+    tags: [cpu]
+    paths:
+      - "CMakeLists.txt"
+      - "cpu_source/**"
+      - "hatch_build.py"
+      - "pyproject.toml"
+      - "README.md"
+      - "tools/**"
+      - ".github/workflows/package-cpu.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "cpu_source/**"
+      - "hatch_build.py"
+      - "pyproject.toml"
+      - "README.md"
+      - "tools/**"
+      - ".github/workflows/package-cpu.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows CPU package
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: >-
+          "%pythonLocation%\python.exe" -m pip install --upgrade pip build hatchling packaging cmake ninja
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Prepare VapourSynth R77 wheel
+        run: >-
+          "%pythonLocation%\python.exe" tools\ci_prepare_windows.py
+
+      - name: Build CPU package directory
+        run: >-
+          "%pythonLocation%\python.exe" tools\ci_build_windows.py
+          --clean
+          --variant cpu
+          --dist-dir dist\windows-cpu
+
+      - name: Smoke-load explicit CPU package
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\windows-cpu
+          --exercise-cpu-filter
+
+      - name: Smoke-load CPU package through manifest autoload
+        run: >-
+          "%pythonLocation%\python.exe" tools\smoke_load_artifact.py
+          --vapoursynth-root _deps\vapoursynth-wheel-R77
+          --artifact-dir dist\windows-cpu
+          --autoload
+          --exercise-cpu-filter
+
+      - name: Pack Windows Release zip
+        run: >-
+          "%pythonLocation%\python.exe" tools\package_plugin_zip.py
+          --variant cpu
+          --input-dir dist\windows-cpu
+          --output dist\release-assets-windows\bm3dcuda-cpu-win64.zip
+
+      - name: Build Windows wheel from the package payload
+        env:
+          BM3DCUDA_CPU_PREBUILT_URL: ${{ github.workspace }}\dist\release-assets-windows\bm3dcuda-cpu-win64.zip
+          BM3DCUDA_VARIANT: cpu
+        run: >-
+          "%pythonLocation%\python.exe" -m build --wheel --no-isolation --outdir dist\release-assets-windows
+
+      - name: Install and smoke-test the Windows wheel
+        shell: powershell
+        run: |
+          $wheel = Get-ChildItem dist\release-assets-windows\*.whl | Select-Object -First 1 -ExpandProperty FullName
+          & "$env:pythonLocation\python.exe" -m pip install --force-reinstall --no-deps $wheel
+          & "$env:pythonLocation\python.exe" tools\smoke_installed_wheel.py --exercise-cpu-filter
+
+      - name: Smoke-test Windows source install with the package payload
+        shell: powershell
+        run: |
+          $env:BM3DCUDA_CPU_PREBUILT_URL = Join-Path $PWD 'dist\release-assets-windows\bm3dcuda-cpu-win64.zip'
+          $env:BM3DCUDA_VARIANT = 'cpu'
+          & "$env:pythonLocation\python.exe" -m pip uninstall -y vapoursynth-bm3dcuda
+          & "$env:pythonLocation\python.exe" -m pip install --force-reinstall --no-deps --no-build-isolation -v .
+          & "$env:pythonLocation\python.exe" tools\smoke_installed_wheel.py --exercise-cpu-filter
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bm3dcuda-release-assets-windows
+          path: dist/release-assets-windows
+          if-no-files-found: error
+
+  linux-build:
+    name: Build Linux x86_64 payload
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the manylinux_2_27 wheel and Release zip
+        shell: bash
+        run: |
+          set -euxo pipefail
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            quay.io/pypa/manylinux2014_x86_64 bash -lc '
+              set -exo pipefail
+              if command -v dnf >/dev/null; then
+                dnf install -y pkgconf-pkg-config
+              else
+                yum install -y pkgconfig
+              fi
+              source /opt/rh/devtoolset-10/enable
+              set -u
+              py=/opt/python/cp312-cp312/bin/python
+              test -n "$py"
+              "$py" -m pip install --upgrade pip
+              "$py" -m pip install build hatchling packaging cmake
+              mkdir -p /opt/unrelated-pkgconfig _deps/vapoursynth-wheel dist/release-assets-linux
+              "$py" -m pip download --only-binary=:all: --no-deps \
+                --platform manylinux_2_27_x86_64 --implementation cp --python-version 312 --abi abi3 \
+                "VapourSynth==79" -d _deps/vapoursynth-wheel
+              unzip -q _deps/vapoursynth-wheel/*.whl -d _deps/vapoursynth-wheel/extracted
+              site_dir=$("$py" -c "import site; print(site.getsitepackages()[0])")
+              unzip -q _deps/vapoursynth-wheel/*.whl -d "$site_dir"
+              export PKG_CONFIG_PATH=/opt/unrelated-pkgconfig
+              export BM3DCUDA_VAPOURSYNTH_INCLUDE=/workspace/_deps/vapoursynth-wheel/extracted/vapoursynth/include
+              export BM3DCUDA_VAPOURSYNTH_PKGCONFIG=/workspace/_deps/vapoursynth-wheel/extracted/vapoursynth/pkgconfig
+              export BM3DCUDA_FORCE_BUILD=1
+              export BM3DCUDA_PLATFORM_TAG=manylinux_2_27_x86_64
+              export BM3DCUDA_VARIANT=cpu
+              "$py" -m build --wheel --no-isolation --outdir dist/release-assets-linux
+              wheel=$(find dist/release-assets-linux -name "*.whl" -print -quit)
+              test -n "$wheel"
+              "$py" tools/package_linux_release.py --wheel "$wheel" \
+                --output dist/release-assets-linux/bm3dcuda-cpu-linux-x86_64.zip
+              "$py" -c "import re, subprocess; path=\"dist/release-assets-linux/bm3dcuda-cpu-linux-x86_64.zip\"; subprocess.run([\"unzip\", \"-l\", path], check=True); subprocess.run([\"unzip\", \"-p\", path, \"bm3dcuda/bm3dcpu.so\"], check=True, stdout=open(\"/tmp/bm3dcpu.so\", \"wb\")); out=subprocess.check_output([\"readelf\", \"--version-info\", \"/tmp/bm3dcpu.so\"], text=True); versions=[tuple(map(int, value.split(\".\"))) for value in re.findall(r\"GLIBC_(\\d+\\.\\d+)\", out)]; print(\"GLIBC versions:\", versions); assert all(version <= (2, 27) for version in versions), versions"
+            '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bm3dcuda-release-assets-linux
+          path: dist/release-assets-linux
+          if-no-files-found: error
+
+  linux-runtime-smoke:
+    name: Smoke Linux Release payload
+    needs: linux-build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bm3dcuda-release-assets-linux
+          path: dist/release-assets-linux
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install VapourSynth R79
+        run: python -m pip install --upgrade pip "VapourSynth==79"
+
+      - name: Explicitly load the Linux Release plugin
+        run: python tools/smoke_bm3dcpu_linux.py --artifact-zip dist/release-assets-linux/bm3dcuda-cpu-linux-x86_64.zip
+
+      - name: Install and smoke-test the published wheel layout
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --force-reinstall --no-deps dist/release-assets-linux/*.whl
+          python tools/smoke_bm3dcpu_linux.py --installed
+
+      - name: Smoke-test source install with the Linux Release payload
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip uninstall -y vapoursynth-bm3dcuda
+          export BM3DCUDA_CPU_PREBUILT_URL="$GITHUB_WORKSPACE/dist/release-assets-linux/bm3dcuda-cpu-linux-x86_64.zip"
+          export BM3DCUDA_VARIANT=cpu
+          python -m pip install --force-reinstall --no-deps -v .
+          python tools/smoke_bm3dcpu_linux.py --installed
+
+      - name: Force the native fallback with an unrelated pkg-config path
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip uninstall -y vapoursynth-bm3dcuda
+          mkdir -p /tmp/unrelated-pkgconfig
+          export PKG_CONFIG_PATH=/tmp/unrelated-pkgconfig
+          export BM3DCUDA_FORCE_BUILD=1
+          export BM3DCUDA_VARIANT=cpu
+          python -m pip install --force-reinstall --no-deps -v .
+          python tools/smoke_bm3dcpu_linux.py --installed
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bm3dcuda-linux-smoke-report
+          path: dist/release-assets-linux
+
+  publish:
+    name: Publish CPU Release assets
+    if: github.ref == 'refs/tags/cpu'
+    needs: [windows, linux-runtime-smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bm3dcuda-release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Upload the complete CPU Release atomically
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          if gh release view cpu --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload cpu release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create cpu release-assets/* --title cpu --notes "Automated BM3DCUDA CPU Release." --repo "$GITHUB_REPOSITORY"
+          fi

@@ -2,10 +2,10 @@
 
 Copyright© 2021 WolframRhodium
 
-BM3D denoising filter for VapourSynth API4. This fork publishes only Windows
-release-backed VCS packages for the `bm3dcpu` and `bm3dcuda_rtc` plugins.
+BM3D denoising filter for VapourSynth API4. Every documented ref publishes a
+Release-backed VCS package on Windows and Linux x86_64.
 
-Current package version: `2.15`.
+Current package version: `2.16`.
 
 This fork intentionally does not publish the standard `bm3dcuda`, HIP, or SYCL
 backends.
@@ -24,9 +24,9 @@ The repository has three user-facing install tags:
 
 | Tag | Intended user | Installed plugins | Release assets used |
 | --- | --- | --- | --- |
-| `cpu` | Machines without an NVIDIA GPU, or users who only want the CPU backend. | `bm3dcpu.dll` | `cpu` release: `bm3dcuda-cpu-win64.zip` |
-| `cu121` | NVIDIA users whose driver supports CUDA 12.1. | `bm3dcpu.dll` and CUDA 12.1 static-NVRTC `bm3dcuda_rtc.dll` | `cpu` release plus `cu121` release: `bm3dcuda-cu121-win64.zip` |
-| `cu129` | NVIDIA users whose driver supports CUDA 12.9. | `bm3dcpu.dll` and CUDA 12.9 static-NVRTC `bm3dcuda_rtc.dll` | `cpu` release plus `cu129` release: `bm3dcuda-cu129-win64.zip` |
+| `cpu` | Machines without an NVIDIA GPU, or users who only want the CPU backend. | `bm3dcpu.dll` on Windows; `bm3dcpu.so` on Linux x86_64 | `cpu` release: `bm3dcuda-cpu-win64.zip` or `bm3dcuda-cpu-linux-x86_64.zip` |
+| `cu121` | NVIDIA users whose driver supports CUDA 12.1. | CPU and CUDA 12.1 static-NVRTC plugins (`.dll` on Windows, `.so` on Linux) | Windows: `cpu` Release plus `cu121` `bm3dcuda-cu121-win64.zip`; Linux: complete `cu121` `bm3dcuda-cu121-linux-x86_64.zip` |
+| `cu129` | NVIDIA users whose driver supports CUDA 12.9. | CPU and CUDA 12.9 static-NVRTC plugins (`.dll` on Windows, `.so` on Linux) | Windows: `cpu` Release plus `cu129` `bm3dcuda-cu129-win64.zip`; Linux: complete `cu129` `bm3dcuda-cu129-linux-x86_64.zip` |
 
 The CUDA variants deliberately include the CPU backend as well, so scripts can
 use `core.bm3dcpu` and `core.bm3dcuda_rtc` from the same installation. Users
@@ -50,20 +50,39 @@ wheel:
 pip install --force-reinstall "vapoursynth-bm3dcuda @ git+https://github.com/RyougiKukoc/VapourSynth-BM3DCUDA-api4.git@cu121"
 ```
 
-The build hook downloads the matching GitHub Release assets and places the
-plugin package under VapourSynth's autoload tree:
+The build hook downloads the matching GitHub Release asset and places the
+plugin package under VapourSynth's autoload tree. The native filename follows
+the running platform:
 
 ```text
 vapoursynth/plugins/bm3dcuda/
   manifest.vs
-  bm3dcpu.dll
-  bm3dcuda_rtc.dll   # only for cu121/cu129
+  bm3dcpu.dll              # Windows
+  bm3dcpu.so               # Linux x86_64 cpu ref
+  bm3dcuda_rtc.dll         # cu121/cu129 on Windows
+  bm3dcuda_rtc.so          # cu121/cu129 on Linux x86_64
   LICENSE
 ```
+
+Each CUDA ref selects its own complete package and never substitutes the CPU
+payload or the other CUDA line. On a platform with no matching asset, the
+native CMake fallback requires the matching CUDA toolkit (`12.1` for `cu121`,
+`12.9` for `cu129`), a compatible VapourSynth SDK, and a compiler. CUDA
+execution additionally requires a compatible NVIDIA driver and GPU.
+
+Set `BM3DCUDA_FORCE_BUILD=1` to bypass a matching Release payload and compile
+locally. On Linux and macOS the isolated PEP 517 build installs a compatible
+VapourSynth SDK wheel, prepends its `vapoursynth/pkgconfig` directory to an
+existing `PKG_CONFIG_PATH`, and uses CMake. A working compiler and CMake remain
+required.
 
 ## Requirements
 
 - `cpu`: CPU with AVX2 support.
+
+- Linux x86_64 payloads: VapourSynth R79 baseline
+  (`manylinux_2_27_x86_64`). The plugin's own GLIBC requirements do not lower
+  the GLIBC floor required by the VapourSynth runtime.
 
 - `cu121` / `cu129`: CPU with AVX2 support, plus an NVIDIA GPU of
   [compute capability](https://developer.nvidia.com/cuda-gpus) 5.0 or higher
@@ -76,6 +95,20 @@ vapoursynth/plugins/bm3dcuda/
 The minimum requirement on compute capability is 3.5, which requires manual compilation (specifying nvcc flag `-gencode arch=compute_35,code=sm_35`).
 
 The `cpu` version does not require NVIDIA drivers or CUDA runtime libraries.
+
+## Verification Scope
+
+The published `cpu`, `cu121`, and `cu129` payloads are built from the API4
+`cpu_source` and `rtc_source` trees. The repository retains unported standard
+CUDA, HIP, and SYCL source trees for upstream reference, but does not publish
+them; they intentionally remain visible to a whole-tree API3 scanner. No API3
+binary/environment is available here for a paired API3/API4 behavior comparison.
+Linux package verification explicitly loads the Release `.so`, renders
+deterministic CPU frames, and records the invalid negative-radius error. CUDA
+variants additionally compile the RTC kernel and render frames on a matching
+driver and GPU. CPU and CUDA outputs are not asserted bitwise equal because the
+project documents that CPU and CUDA implementations need not be bitwise
+identical.
 
 ## Parameters
 
@@ -205,6 +238,14 @@ GPU memory consumptions:
 
 ## Compilation
 - Windows release builds use MSVC for both `bm3dcpu` and `bm3dcuda_rtc`.
+
+- Linux Release builds use the repository CMake project. The CPU payload is
+  built in a conservative manylinux container with `ENABLE_CPU=ON`,
+  `ENABLE_CUDA=OFF`, and `ENABLE_CUDA_RTC=OFF`; each CUDA payload is built
+  against its matching CUDA toolkit with `ENABLE_CPU=ON` and
+  `ENABLE_CUDA_RTC=ON`. Every Linux Release zip contains one top-level
+  `bm3dcuda/` directory with `manifest.vs`, `bm3dcpu.so`, `LICENSE`, and, for
+  CUDA refs, `bm3dcuda_rtc.so`.
 
 - The CMake configuration of `BM3DCUDA_RTC` links to NVRTC static library by default, which requires CUDA 11.5 or later.
 

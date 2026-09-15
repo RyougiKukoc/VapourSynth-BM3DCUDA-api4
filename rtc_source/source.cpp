@@ -25,6 +25,7 @@
 #include <cmath>
 #include <concepts>
 #include <cstdint>
+#include <iomanip>
 #include <ios>
 #include <limits>
 #include <memory>
@@ -212,7 +213,7 @@ static std::variant<CUmodule, std::string> compile(
         << "#define transform_2d " << transform_2d_s << "\n"
         << "#define transform_1d " << transform_1d_s << "\n"
         << "#define bm_error " << bm_error_s << "\n"
-        << std::hexfloat << std::boolalpha
+        << std::setprecision(std::numeric_limits<float>::max_digits10) << std::boolalpha
         << "__device__ static const int width = " << width << ";\n"
         << "__device__ static const int height = " << height << ";\n"
         << "__device__ static const int stride = " << stride << ";\n"
@@ -1381,7 +1382,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
     vspapi->configPlugin(
         PLUGIN_ID, "bm3dcuda_rtc",
         "BM3D algorithm implemented in CUDA (NVRTC)",
-        VS_MAKE_VERSION(2, 15), VAPOURSYNTH_API_VERSION, 0, plugin
+        VS_MAKE_VERSION(2, 16), VAPOURSYNTH_API_VERSION, 0, plugin
     );
 
     constexpr auto bm3d_args {

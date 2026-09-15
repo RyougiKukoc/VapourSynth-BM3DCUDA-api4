@@ -1,31 +1,6 @@
 name: Build Windows CPU/RTC
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    tags:
-      - cpu
-      - cu121
-      - cu129
-    paths:
-      - "CMakeLists.txt"
-      - "cpu_source/**"
-      - "hatch_build.py"
-      - "pyproject.toml"
-      - "rtc_source/**"
-      - "tools/**"
-      - ".github/workflows/windows.yml"
-  pull_request:
-    paths:
-      - "CMakeLists.txt"
-      - "cpu_source/**"
-      - "hatch_build.py"
-      - "pyproject.toml"
-      - "rtc_source/**"
-      - "tools/**"
-      - ".github/workflows/windows.yml"
   workflow_dispatch:
     inputs:
       variant:

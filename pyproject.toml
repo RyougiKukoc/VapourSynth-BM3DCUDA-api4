@@ -1,10 +1,15 @@
 [build-system]
-requires = ["hatchling>=1.30", "packaging>=24.0"]
+requires = [
+  "hatchling>=1.30",
+  "packaging>=24.0",
+  "cmake>=3.20; sys_platform != 'win32'",
+  "VapourSynth>=77,<80; sys_platform != 'win32'",
+]
 build-backend = "hatchling.build"
 
 [project]
 name = "vapoursynth-bm3dcuda"
-version = "2.15"
+version = "2.16"
 description = "BM3D CPU and CUDA RTC plugins for VapourSynth"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -34,6 +39,8 @@ include = [
 include = ["vapoursynth/plugins"]
 artifacts = [
   "vapoursynth/plugins/**/*.dll",
+  "vapoursynth/plugins/**/*.so",
+  "vapoursynth/plugins/**/*.dylib",
   "vapoursynth/plugins/**/manifest.vs",
   "vapoursynth/plugins/**/LICENSE",
 ]

@@ -4,7 +4,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     cmake_policy(SET CMP0091 NEW)
 endif()
 
-project(BM3DCUDA_RTC VERSION 2.15 LANGUAGES CXX)
+project(BM3DCUDA_RTC VERSION 2.16 LANGUAGES CXX)
 
 if (CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(WARNING "NVRTC is not available for 32-bit system")
@@ -21,6 +21,12 @@ else()
         CXX_STANDARD_REQUIRED ON)
 
     target_link_libraries(bm3dcuda_rtc PRIVATE CUDA::cuda_driver)
+
+    if (UNIX AND NOT APPLE)
+        # CUDA's static NVRTC payload must not make the wheel depend on the
+        # build host's libstdc++ ABI.
+        target_link_options(bm3dcuda_rtc PRIVATE -static-libstdc++ -static-libgcc -Wl,--exclude-libs,ALL)
+    endif()
 
     if (WIN32 AND MSVC)
         target_link_libraries(bm3dcuda_rtc PRIVATE delayimp)

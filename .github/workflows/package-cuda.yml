@@ -188,6 +188,7 @@ jobs:
                 --cuda-root /usr/local/cuda \
                 --build-dir build-linux-${{ matrix.variant }} \
                 --output dist/release-assets-linux/bm3dcuda-${{ matrix.variant }}-linux-x86_64.zip
+              chmod -R a+rwX dist/release-assets-linux
             '
 
       - uses: actions/setup-python@v5

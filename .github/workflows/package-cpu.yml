@@ -239,6 +239,9 @@ jobs:
         run: |
           set -euxo pipefail
           if gh release view cpu --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release view cpu --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+              | grep '^vapoursynth_bm3dcuda-.*\.whl$' \
+              | xargs -r -n1 gh release delete-asset cpu --yes --repo "$GITHUB_REPOSITORY"
             gh release upload cpu release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create cpu release-assets/* --title cpu --notes "Automated BM3DCUDA CPU Release." --repo "$GITHUB_REPOSITORY"

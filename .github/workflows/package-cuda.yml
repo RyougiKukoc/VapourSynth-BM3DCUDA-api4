@@ -72,7 +72,6 @@ jobs:
             nvcc_version: 12.9.86
             nvjitlink_version: 12.9.86
             extra_cuda_packages: "libnvfatbin=12.9.82 libnvfatbin-dev=12.9.82 libnvfatbin-static=12.9.82"
-    if: needs.select.outputs.variant == 'all' || needs.select.outputs.variant == matrix.variant
     name: Build Windows ${{ matrix.variant }} package
     runs-on: windows-2025
     defaults:
@@ -164,7 +163,6 @@ jobs:
             image: nvidia/cuda:12.1.1-devel-ubi8
           - variant: cu129
             image: nvidia/cuda:12.9.1-devel-ubi8
-    if: needs.select.outputs.variant == 'all' || needs.select.outputs.variant == matrix.variant
     name: Build Linux ${{ matrix.variant }} payload
     runs-on: ubuntu-24.04
     steps:

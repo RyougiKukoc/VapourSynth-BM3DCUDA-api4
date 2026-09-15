@@ -51,6 +51,10 @@ jobs:
         run: >-
           "%pythonLocation%\python.exe" tools\ci_prepare_windows.py
 
+      - name: Install VapourSynth R77 for wheel smoke tests
+        run: >-
+          for %%I in (_deps\downloads\vapoursynth-r77-wheel\*.whl) do "%pythonLocation%\python.exe" -m pip install --force-reinstall --no-deps "%%~fI"
+
       - name: Build CPU package directory
         run: >-
           "%pythonLocation%\python.exe" tools\ci_build_windows.py

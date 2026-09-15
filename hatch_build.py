@@ -21,6 +21,7 @@ PLUGIN_PACKAGE = "bm3dcuda"
 DEFAULT_REPOSITORY = "RyougiKukoc/VapourSynth-BM3DCUDA-api4"
 CUDA_VARIANTS = {"cu121", "cu129"}
 SUPPORTED_VARIANTS = {"cpu", *CUDA_VARIANTS}
+VARIANT_MARKER = ROOT / "bm3dcuda_variant.txt"
 
 
 def _truthy(value: str | None) -> bool:
@@ -76,6 +77,17 @@ def _variant_from_environment() -> str | None:
     return None
 
 
+def _variant_from_repository() -> str | None:
+    if not VARIANT_MARKER.is_file():
+        return None
+    value = VARIANT_MARKER.read_text(encoding="ascii").strip()
+    if value not in SUPPORTED_VARIANTS:
+        raise RuntimeError(
+            f"invalid BM3DCUDA variant marker {value!r} in {VARIANT_MARKER}; expected one of {sorted(SUPPORTED_VARIANTS)}"
+        )
+    return value
+
+
 def _variant_from_git() -> str | None:
     tags_at_head = _run_text(["git", "tag", "--points-at", "HEAD"])
     matches = [tag for tag in tags_at_head.splitlines() if tag in SUPPORTED_VARIANTS]
@@ -89,7 +101,7 @@ def _variant_from_git() -> str | None:
 
 
 def _selected_variant() -> str:
-    variant = _variant_from_environment() or _variant_from_git() or "cpu"
+    variant = _variant_from_environment() or _variant_from_repository() or _variant_from_git() or "cpu"
     if variant not in SUPPORTED_VARIANTS:
         raise RuntimeError(f"unsupported BM3DCUDA variant {variant!r}; expected one of {sorted(SUPPORTED_VARIANTS)}")
     return variant

@@ -27,6 +27,7 @@ include = [
   "CMakeLists.txt",
   "LICENSE",
   "README.md",
+  "bm3dcuda_variant.txt",
   "cpu_source",
   "hatch_build.py",
   "pyproject.toml",

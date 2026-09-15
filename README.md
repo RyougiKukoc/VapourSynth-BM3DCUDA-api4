@@ -70,6 +70,11 @@ native CMake fallback requires the matching CUDA toolkit (`12.1` for `cu121`,
 `12.9` for `cu129`), a compatible VapourSynth SDK, and a compiler. CUDA
 execution additionally requires a compatible NVIDIA driver and GPU.
 
+Each published ref carries its selected variant in the source tree, so a VCS
+checkout remains unambiguous even when multiple release refs share recent
+history. CI and local verification may override that selection explicitly with
+`BM3DCUDA_VARIANT`.
+
 Set `BM3DCUDA_FORCE_BUILD=1` to bypass a matching Release payload and compile
 locally. On Linux and macOS the isolated PEP 517 build installs a compatible
 VapourSynth SDK wheel, prepends its `vapoursynth/pkgconfig` directory to an

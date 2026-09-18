@@ -3,7 +3,7 @@ requires = [
   "hatchling>=1.30",
   "packaging>=24.0",
   "cmake>=3.20; sys_platform != 'win32'",
-  "VapourSynth>=77,<80; sys_platform != 'win32'",
+  "VapourSynth>=77; sys_platform != 'win32'",
 ]
 build-backend = "hatchling.build"
 

@@ -1,0 +1,78 @@
+name: Build HIP API4
+
+on:
+  workflow_dispatch:
+    inputs:
+      gpu_targets:
+        description: "Semicolon-separated AMD GPU targets"
+        required: false
+        default: "gfx1010;gfx1030;gfx1100;gfx1101;gfx1102;gfx1103;gfx1200;gfx1201"
+        type: string
+
+jobs:
+  build:
+    name: Build bm3dhip with ROCm
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare VapourSynth R77 API4 SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3 \
+            -o vapoursynth.tar.gz \
+            https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R77.tar.gz
+          tar -xzf vapoursynth.tar.gz
+          mv vapoursynth-R77 vapoursynth
+          test -f vapoursynth/include/VapourSynth4.h
+          test -f vapoursynth/include/VSHelper4.h
+
+      - name: Install ROCm and build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt update
+          sudo apt install -y ninja-build gnupg
+          curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
+            | gpg --dearmor \
+            | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.0 jammy main" \
+            | sudo tee /etc/apt/sources.list.d/rocm.list
+          echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' \
+            | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt update
+          sudo apt install -y hip-runtime-amd rocm-device-libs hip-dev libxml2
+
+      - name: Configure HIP API4 build
+        shell: bash
+        env:
+          GPU_TARGETS: ${{ inputs.gpu_targets }}
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build_hip -G Ninja \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D ENABLE_CPU=OFF \
+            -D ENABLE_CUDA=OFF \
+            -D ENABLE_CUDA_RTC=OFF \
+            -D ENABLE_HIP=ON \
+            -D ENABLE_SYCL=OFF \
+            -D CMAKE_CXX_COMPILER=/opt/rocm/bin/amdclang++ \
+            -D CMAKE_PREFIX_PATH=/opt/rocm/lib/cmake \
+            -D VAPOURSYNTH_INCLUDE_DIRECTORY="$GITHUB_WORKSPACE/vapoursynth/include" \
+            -D GPU_TARGETS="$GPU_TARGETS"
+
+      - name: Build
+        run: cmake --build build_hip --verbose
+
+      - name: Install artifact
+        run: cmake --install build_hip --prefix artifact
+
+      - name: Upload HIP plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bm3dhip-api4-rocm
+          path: artifact
+          if-no-files-found: error

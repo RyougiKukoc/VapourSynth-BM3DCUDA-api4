@@ -8,7 +8,8 @@ Release-backed VCS package on Windows and Linux x86_64.
 Current package version: `2.16`.
 
 This fork intentionally does not publish the standard `bm3dcuda`, HIP, or SYCL
-backends.
+backends. The HIP source is kept as an API4 build target for ROCm/Linux
+validation, but it is not included in the Python package or release assets.
 
 ## Description
 
@@ -104,10 +105,10 @@ The `cpu` version does not require NVIDIA drivers or CUDA runtime libraries.
 ## Verification Scope
 
 The published `cpu`, `cu121`, and `cu129` payloads are built from the API4
-`cpu_source` and `rtc_source` trees. The repository retains unported standard
-CUDA, HIP, and SYCL source trees for upstream reference, but does not publish
-them; they intentionally remain visible to a whole-tree API3 scanner. No API3
-binary/environment is available here for a paired API3/API4 behavior comparison.
+`cpu_source` and `rtc_source` trees. The repository retains the unported
+standard CUDA and SYCL source trees for upstream reference, and keeps the
+API4 HIP source as an unpublished ROCm build target. No API3 binary/environment
+is available here for a paired API3/API4 behavior comparison.
 Linux package verification explicitly loads the Release `.so`, renders
 deterministic CPU frames, and records the invalid negative-radius error. CUDA
 variants additionally compile the RTC kernel and render frames on a matching
@@ -266,6 +267,50 @@ cmake -S . -B build -G Ninja ^
   -D VAPOURSYNTH_INCLUDE_DIRECTORY=C:\path\to\vapoursynth\include
 
 cmake --build build --config Release
+```
+
+### HIP API4 / ROCm validation
+
+The HIP backend is an API4 target, but is not included in the published
+Python packages. The manual CI recipe is stored in
+`.github/workflows/hip-api4.yml` and is deliberately limited to
+`workflow_dispatch`, so committing it does not start a build. It uses the
+ROCm toolchain and a VapourSynth R77 API4 SDK:
+
+```bash
+sudo apt update
+sudo apt install -y ninja-build
+
+curl -L --fail --retry 3 \
+  -o vapoursynth.tar.gz \
+  https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R77.tar.gz
+tar -xzf vapoursynth.tar.gz
+mv vapoursynth-R77 vapoursynth
+
+curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
+  | gpg --dearmor \
+  | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.0 jammy main" \
+  | sudo tee /etc/apt/sources.list.d/rocm.list
+echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' \
+  | sudo tee /etc/apt/preferences.d/rocm-pin-600
+sudo apt update
+sudo apt install -y hip-runtime-amd rocm-device-libs hip-dev libxml2
+
+cmake -S . -B build_hip -G Ninja \
+  -D CMAKE_BUILD_TYPE=Release \
+  -D ENABLE_CPU=OFF \
+  -D ENABLE_CUDA=OFF \
+  -D ENABLE_CUDA_RTC=OFF \
+  -D ENABLE_HIP=ON \
+  -D ENABLE_SYCL=OFF \
+  -D CMAKE_CXX_COMPILER=/opt/rocm/bin/amdclang++ \
+  -D CMAKE_PREFIX_PATH=/opt/rocm/lib/cmake \
+  -D VAPOURSYNTH_INCLUDE_DIRECTORY="$PWD/vapoursynth/include" \
+  -D GPU_TARGETS="gfx1010;gfx1030;gfx1100;gfx1101;gfx1102;gfx1103;gfx1200;gfx1201"
+
+cmake --build build_hip --verbose
+cmake --install build_hip --prefix artifact
 ```
 
 For reproducible release packages, use the GitHub Actions workflow. It builds

@@ -28,6 +28,10 @@ target_link_libraries(bm3dhip_kernel hip::device)
 
 add_library(bm3dhip SHARED)
 target_link_libraries(bm3dhip bm3dhip_source bm3dhip_kernel)
+if (UNIX AND NOT APPLE)
+    # HIP's --hip-link adds -lamdhip64; Arch does not add ROCm's lib directory implicitly.
+    target_link_directories(bm3dhip PRIVATE "${ROCM_PATH}/lib")
+endif()
 
 install(TARGETS bm3dhip
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

@@ -272,10 +272,41 @@ cmake --build build --config Release
 ### HIP API4 / ROCm validation
 
 The HIP backend is an API4 target, but is not included in the published
-Python packages. The manual CI recipe is stored in
-`.github/workflows/hip-api4.yml` and is deliberately limited to
-`workflow_dispatch`, so committing it does not start a build. It uses the
-ROCm toolchain and a VapourSynth R77 API4 SDK:
+Python packages. On Arch Linux, install the distribution packages and build
+for the target machine's AMD GPU architecture (replace `gfx1100` below with
+the `gfx...` target reported by `rocminfo`):
+
+```bash
+sudo pacman -Syu --needed cmake ninja gcc hip-runtime-amd vapoursynth
+rocminfo | grep -o 'gfx[0-9a-z]*' | sort -u
+
+VS_INCLUDE="$(python -c 'import vapoursynth as vs; from pathlib import Path; print(Path(vs.__file__).parent / "include")')"
+cmake -S . -B build_hip -G Ninja \
+  -D CMAKE_BUILD_TYPE=Release \
+  -D ENABLE_CPU=OFF \
+  -D ENABLE_CUDA=OFF \
+  -D ENABLE_CUDA_RTC=OFF \
+  -D ENABLE_HIP=ON \
+  -D ENABLE_SYCL=OFF \
+  -D CMAKE_CXX_COMPILER=/opt/rocm/bin/amdclang++ \
+  -D CMAKE_PREFIX_PATH=/opt/rocm/lib/cmake \
+  -D VAPOURSYNTH_INCLUDE_DIRECTORY="$VS_INCLUDE" \
+  -D GPU_TARGETS=gfx1100
+
+cmake --build build_hip --verbose
+cmake --install build_hip --prefix "$PWD/artifact"
+ldd artifact/lib/libbm3dhip.so
+python -c 'import vapoursynth as vs; from pathlib import Path; vs.core.std.LoadPlugin(path=str(Path("artifact/lib/libbm3dhip.so").resolve())); print(vs.core.bm3dhip.BM3D)'
+```
+
+The resulting plugin is `artifact/lib/libbm3dhip.so`. Load it explicitly as
+shown above, or install it in a VapourSynth autoload directory. Rendering a
+BM3D frame requires a supported AMD GPU and a working ROCm runtime. The
+manual Arch build workflow is `.github/workflows/hip-api4.yml`; it only runs
+when started with `workflow_dispatch`.
+
+For Ubuntu 24.04 with the ROCm 7.0 packages, use a VapourSynth R77 API4 SDK
+and the following build recipe:
 
 ```bash
 sudo apt update

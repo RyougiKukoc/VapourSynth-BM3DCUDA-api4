@@ -1,4 +1,4 @@
-name: Build HIP API4
+name: Build HIP API4 on Arch
 
 on:
   workflow_dispatch:
@@ -6,45 +6,25 @@ on:
       gpu_targets:
         description: "Semicolon-separated AMD GPU targets"
         required: false
-        default: "gfx1010;gfx1030;gfx1100;gfx1101;gfx1102;gfx1103;gfx1200;gfx1201"
+        default: "gfx1100"
         type: string
 
 jobs:
   build:
-    name: Build bm3dhip with ROCm
+    name: Build bm3dhip with Arch ROCm
     runs-on: ubuntu-24.04
+    container: archlinux:latest
 
     steps:
+      - name: Install Arch dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          pacman -Syu --noconfirm --needed git cmake ninja gcc hip-runtime-amd vapoursynth
+          pacman -Scc --noconfirm
+
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Prepare VapourSynth R77 API4 SDK
-        shell: bash
-        run: |
-          set -euxo pipefail
-          curl -L --fail --retry 3 \
-            -o vapoursynth.tar.gz \
-            https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R77.tar.gz
-          tar -xzf vapoursynth.tar.gz
-          mv vapoursynth-R77 vapoursynth
-          test -f vapoursynth/include/VapourSynth4.h
-          test -f vapoursynth/include/VSHelper4.h
-
-      - name: Install ROCm and build dependencies
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo apt update
-          sudo apt install -y ninja-build gnupg
-          curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
-            | gpg --dearmor \
-            | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
-          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.0 jammy main" \
-            | sudo tee /etc/apt/sources.list.d/rocm.list
-          echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' \
-            | sudo tee /etc/apt/preferences.d/rocm-pin-600
-          sudo apt update
-          sudo apt install -y hip-runtime-amd rocm-device-libs hip-dev libxml2
 
       - name: Configure HIP API4 build
         shell: bash
@@ -52,6 +32,9 @@ jobs:
           GPU_TARGETS: ${{ inputs.gpu_targets }}
         run: |
           set -euxo pipefail
+          VS_INCLUDE="$(python -c 'import vapoursynth as vs; from pathlib import Path; print(Path(vs.__file__).parent / "include")')"
+          test -f "$VS_INCLUDE/VapourSynth4.h"
+          test -f "$VS_INCLUDE/VSHelper4.h"
           cmake -S . -B build_hip -G Ninja \
             -D CMAKE_BUILD_TYPE=Release \
             -D ENABLE_CPU=OFF \
@@ -61,18 +44,26 @@ jobs:
             -D ENABLE_SYCL=OFF \
             -D CMAKE_CXX_COMPILER=/opt/rocm/bin/amdclang++ \
             -D CMAKE_PREFIX_PATH=/opt/rocm/lib/cmake \
-            -D VAPOURSYNTH_INCLUDE_DIRECTORY="$GITHUB_WORKSPACE/vapoursynth/include" \
+            -D VAPOURSYNTH_INCLUDE_DIRECTORY="$VS_INCLUDE" \
             -D GPU_TARGETS="$GPU_TARGETS"
 
-      - name: Build
-        run: cmake --build build_hip --verbose
+      - name: Build and install artifact
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build_hip --verbose
+          cmake --install build_hip --prefix "$GITHUB_WORKSPACE/artifact"
+          ldd artifact/lib/libbm3dhip.so
 
-      - name: Install artifact
-        run: cmake --install build_hip --prefix artifact
+      - name: Smoke-load API4 plugin without a GPU
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -c 'import vapoursynth as vs; from pathlib import Path; vs.core.std.LoadPlugin(path=str(Path("artifact/lib/libbm3dhip.so").resolve())); assert vs.core.bm3dhip.BM3D; assert vs.core.bm3dhip.BM3Dv2'
 
       - name: Upload HIP plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bm3dhip-api4-rocm
-          path: artifact
+          name: bm3dhip-api4-arch
+          path: artifact/lib/libbm3dhip.so
           if-no-files-found: error
